@@ -12,19 +12,19 @@ export class RateLimitsRepository {
 
     let requestsQuery = db('rate_limit_violations');
     if (from && to) {
-      requestsQuery = requestsQuery.whereBetween('window_start', [from, to]);
+      requestsQuery = requestsQuery.whereBetween('created_at', [from, to]);
     }
     const requestsResult = await requestsQuery.sum('request_count').first() as any;
-    const totalRequests = requestsResult.sum || 0;
+    const totalRequests = parseFloat(requestsResult.sum) || 0;
 
     const windowSeconds = from && to 
-      ? (new Date(to).getTime() - new Date(from).getTime()) / 1000
+      ? Math.max(1, (new Date(to).getTime() - new Date(from).getTime()) / 1000)
       : 3600;
-    const totalMinutes = Math.floor(windowSeconds / 60);
-    const rpm = totalMinutes > 0 ? Math.floor(totalRequests / totalMinutes) : 0;
+    const windowMinutes = windowSeconds / 60;
+    const rpm = windowMinutes > 0 ? Math.round((totalRequests / windowMinutes) * 100) / 100 : 0;
 
     return {
-      total_violations: totalViolations.count,
+      total_violations: parseInt(totalViolations.count, 10) || 0,
       requests_per_minute: rpm,
       peak_rpm: 0,
     };
