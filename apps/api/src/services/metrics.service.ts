@@ -6,7 +6,7 @@ const metricsRepo = new MetricsRepository();
 
 export class MetricsService {
   async getSummary(from?: string, to?: string): Promise<MetricsSummary> {
-    const cacheKey = `metrics:summary`;
+    const cacheKey = `metrics:summary:${from || 'all'}:${to || 'all'}`;
     const cached = await redis.get(cacheKey);
 
     if (cached) {
@@ -14,9 +14,16 @@ export class MetricsService {
     }
 
     const summary = await metricsRepo.getSummary(from, to);
-    await redis.setEx(cacheKey, 3600, JSON.stringify(summary));
+    await redis.setEx(cacheKey, 30, JSON.stringify(summary));
 
     return summary;
+  }
+
+  async invalidateSummaryCache(): Promise<void> {
+    const keys = await redis.keys('metrics:summary:*');
+    if (keys.length > 0) {
+      await redis.del(keys);
+    }
   }
 
   async getRequestsOverTime(

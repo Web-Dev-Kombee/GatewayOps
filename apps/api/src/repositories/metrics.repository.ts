@@ -9,8 +9,8 @@ export class MetricsRepository {
       query = query.whereBetween('created_at', [from, to]);
     }
 
-    const countResult = await query.clone().count('*').first() as any;
-    const totalRequests = countResult.count;
+    const countResult = await query.clone().count('* as total').first() as any;
+    const totalRequests = parseInt(countResult.total, 10) || 0;
 
     let failedQuery = db('api_logs');
     if (from && to) {
@@ -18,20 +18,21 @@ export class MetricsRepository {
     }
     const failedResult = await failedQuery
       .where('status_code', '>=', 400)
-      .count('*')
+      .count('* as total')
       .first() as any;
-    const failedRequests = failedResult.count;
+    const failedRequests = parseInt(failedResult.total, 10) || 0;
 
-    const successRate = totalRequests > 0 
+    const successRate = totalRequests > 0
       ? Math.round((totalRequests - failedRequests) / totalRequests * 100)
       : 100;
 
     let authFailuresQuery = db('auth_events')
-      .where('event_type', 'login_failure');
+      .whereIn('event_type', ['login_failure', 'failed_login']);
     if (from && to) {
       authFailuresQuery = authFailuresQuery.whereBetween('created_at', [from, to]);
     }
-    const authFailures = await authFailuresQuery.count('*').first() as any;
+    const authFailuresResult = await authFailuresQuery.count('* as total').first() as any;
+    const authFailures = parseInt(authFailuresResult.total, 10) || 0;
 
     let latencyQuery = db('api_logs');
     if (from && to) {
@@ -44,15 +45,16 @@ export class MetricsRepository {
     if (from && to) {
       violationsQuery = violationsQuery.whereBetween('created_at', [from, to]);
     }
-    const violations = await violationsQuery.count('*').first() as any;
+    const violationsResult = await violationsQuery.count('* as total').first() as any;
+    const rateLimitViolations = parseInt(violationsResult.total, 10) || 0;
 
     return {
       total_requests: totalRequests,
       failed_requests: failedRequests,
       success_rate: successRate,
-      auth_failures: authFailures.count,
+      auth_failures: authFailures,
       avg_response_time: avgResponseTime,
-      rate_limit_violations: violations.count,
+      rate_limit_violations: rateLimitViolations,
     };
   }
 

@@ -7,47 +7,60 @@ export class LogsRepository {
   async findAll(params: LogsQueryParams & { page: number; limit: number }) {
     const { page, limit, service, statusCode, from, to, search } = params;
 
-    let query = db('api_logs');
+    let query = db('api_logs')
+      .leftJoin('services', 'api_logs.service_id', 'services.id');
 
     if (service) {
-      const serviceRecord = await db('services').where('slug', service).first();
-      if (serviceRecord) {
-        query = query.where('service_id', serviceRecord.id);
-      }
+      query = query.where('services.slug', service);
     }
 
     if (statusCode) {
-      query = query.orWhere('status_code', statusCode);
+      if (statusCode >= 1 && statusCode <= 9) {
+        const min = statusCode * 100;
+        const max = min + 99;
+        query = query.whereBetween('api_logs.status_code', [min, max]);
+      } else {
+        query = query.where('api_logs.status_code', statusCode);
+      }
     }
 
     if (from && to) {
-      query = query.whereBetween('created_at', [from, to]);
+      let fromDate = from;
+      let toDate = to;
+      if (/^\d{4}-\d{2}-\d{2}$/.test(from)) {
+        fromDate = `${from}T00:00:00.000Z`;
+      }
+      if (/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+        toDate = `${to}T23:59:59.999Z`;
+      } else if (from === to) {
+        const d = new Date(to);
+        d.setUTCHours(23, 59, 59, 999);
+        toDate = d.toISOString();
+      }
+      query = query.whereBetween('api_logs.created_at', [fromDate, toDate]);
     }
 
     if (search) {
-      query = query.where('endpoint', 'like', `%${search}%`);
+      query = query.where('api_logs.endpoint', 'like', `%${search}%`);
     }
 
-    const total = await query.clone().count('* as count').first() as any;
-    const offset = page * limit;
+    const total = await query.clone().count('api_logs.id as count').first() as any;
+    const totalCount = parseInt(total?.count, 10) || 0;
+    const offset = Math.max(0, (page - 1) * limit);
 
     const logs = await query
-      .orderBy('created_at', 'desc')
+      .select('api_logs.*', 'services.name as service_name')
+      .orderBy('api_logs.created_at', 'desc')
       .limit(limit)
       .offset(offset);
-
-    for (const log of logs) {
-      const service = await db('services').where('id', log.service_id).first();
-      (log as any).service_name = service?.name;
-    }
 
     return {
       logs: logs as ApiLog[],
       meta: {
         page,
         limit,
-        total: total.count,
-        pages: Math.ceil(total.count / limit),
+        total: totalCount,
+        pages: Math.ceil(totalCount / limit),
       } as PaginationMeta,
     };
   }
